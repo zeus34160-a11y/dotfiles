@@ -39,4 +39,4 @@ timeout = 0
 
 [play_sound]
 summary = "*"
-script = /home/italy/.config/dunst/sound.sh
+script = ~/.config/dunst/sound.sh
