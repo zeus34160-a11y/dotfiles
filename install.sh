@@ -41,11 +41,13 @@ sudo xbps-install -S || {
     exit 1
 }
 
-echo "==> Enabling the official Void nonfree repository"
-sudo xbps-install -y void-repo-nonfree || {
+echo "==> Checking the official Void nonfree repository"
+if xbps-query -p pkgver void-repo-nonfree >/dev/null 2>&1; then
+    echo "   Nonfree repository package already installed"
+elif ! sudo xbps-install -y void-repo-nonfree; then
     echo "Could not install void-repo-nonfree; continuing with main repository only."
     echo "void-repo-nonfree" >> "$FAILED_FILE"
-}
+fi
 sudo xbps-install -S || {
     echo "Repository synchronization failed. Fix repository configuration before continuing."
     exit 1
@@ -56,7 +58,9 @@ sudo xbps-install -S || {
 echo "==> Installing bootstrap and driftwm build dependencies"
 BOOTSTRAP_PKGS="sudo ca-certificates curl git tar xz flatpak fontconfig gcc make pkg-config rust cargo libseat-devel libdisplay-info-devel libinput-devel eudev-libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libdrm-devel"
 for p in $BOOTSTRAP_PKGS; do
-    if ! sudo xbps-install -y "$p"; then
+    if xbps-query -p pkgver "$p" >/dev/null 2>&1; then
+        echo "   Already installed: $p"
+    elif ! sudo xbps-install -y "$p"; then
         echo "$p" >> "$FAILED_FILE"
     fi
 done
@@ -91,7 +95,17 @@ PKGS='
 
 # Install in batches. If a batch fails, retry its packages individually so
 # one unavailable package does not prevent the rest from installing.
-set -- $PKGS
+# Skip packages that are already installed.
+PENDING_PKGS=""
+for p in $PKGS; do
+    if xbps-query -p pkgver "$p" >/dev/null 2>&1; then
+        echo "   Already installed: $p"
+    else
+        PENDING_PKGS="$PENDING_PKGS $p"
+    fi
+done
+
+set -- $PENDING_PKGS
 while [ "$#" -gt 0 ]; do
     BATCH=""
     COUNT=0
@@ -115,15 +129,23 @@ done
 
 # ---------------------------------------------------------------
 echo "==> seatd service and group"
-if [ -d /etc/sv/seatd ] && [ ! -e /var/service/seatd ]; then
-    sudo ln -s /etc/sv/seatd /var/service/
+if [ -d /etc/sv/seatd ]; then
+    if [ ! -e /var/service/seatd ] && [ ! -L /var/service/seatd ]; then
+        sudo ln -s /etc/sv/seatd /var/service/seatd || echo "seatd-service" >> "$FAILED_FILE"
+    else
+        echo "   seatd service already enabled"
+    fi
 fi
+
 if getent group _seatd >/dev/null 2>&1; then
-    sudo usermod -aG _seatd "$USER"
+    if id -nG "$USER" | grep -qw "_seatd"; then
+        echo "   Already a member of _seatd"
+    elif ! sudo usermod -aG _seatd "$USER"; then
+        echo "seatd-group" >> "$FAILED_FILE"
+    fi
 else
     echo "   _seatd group not found; skipping group change"
 fi
-
 
 # ---------------------------------------------------------------
 echo "==> Installing Flatpak applications"
@@ -132,7 +154,9 @@ if command -v flatpak >/dev/null 2>&1; then
         https://dl.flathub.org/repo/flathub.flatpakrepo; then
 
         for app in dev.vencord.Vesktop org.vinegarhq.Sober; do
-            if ! flatpak install --user -y flathub "$app"; then
+            if flatpak info --user "$app" >/dev/null 2>&1; then
+                echo "   Already installed: $app"
+            elif ! flatpak install --user -y flathub "$app"; then
                 echo "$app" >> "$FAILED_FILE"
             fi
         done
@@ -216,8 +240,12 @@ fi
 # ---------------------------------------------------------------
 echo "==> Copying Wallpapers to ~/Wallpapers"
 if [ -d "$DIR/Wallpapers" ]; then
-    mkdir -p "$HOME/Wallpapers"
-    cp -r "$DIR/Wallpapers/." "$HOME/Wallpapers/"
+    if mkdir -p "$HOME/Wallpapers" &&
+        cp -r "$DIR/Wallpapers/." "$HOME/Wallpapers/"; then
+        echo "   Wallpapers copied successfully"
+    else
+        echo "wallpapers-copy" >> "$FAILED_FILE"
+    fi
 else
     echo "   no Wallpapers folder found next to install.sh (skipped)"
 fi
@@ -267,8 +295,28 @@ fi
 [ ! -f "$HOME/.config/dunst/sound.sh" ] || chmod +x "$HOME/.config/dunst/sound.sh"
 
 # File-picker portal preference (useful for Flatpak app upload dialogs).
-mkdir -p "$HOME/.config/xdg-desktop-portal"
-printf '[preferred]\ndefault=gtk\n' > "$HOME/.config/xdg-desktop-portal/portals.conf"
+PORTAL_DIR="$HOME/.config/xdg-desktop-portal"
+PORTAL_FILE="$PORTAL_DIR/portals.conf"
+
+if mkdir -p "$PORTAL_DIR"; then
+    if [ -e "$PORTAL_FILE" ] || [ -L "$PORTAL_FILE" ]; then
+        PORTAL_BACKUP="${PORTAL_FILE}.bak.$(date +%Y%m%d-%H%M%S)-$$"
+        if mv "$PORTAL_FILE" "$PORTAL_BACKUP"; then
+            echo "   Existing portal configuration backed up: $PORTAL_BACKUP"
+        else
+            echo "portal-config-backup" >> "$FAILED_FILE"
+            PORTAL_FILE=""
+        fi
+    fi
+    if [ -n "$PORTAL_FILE" ]; then
+        printf "[preferred]
+default=gtk
+" > "$PORTAL_FILE" ||
+            echo "portal-config-write" >> "$FAILED_FILE"
+    fi
+else
+    echo "portal-config-directory" >> "$FAILED_FILE"
+fi
 
 echo
 if [ -s "$FAILED_FILE" ]; then
