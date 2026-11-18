@@ -1,3 +1,3 @@
 # Dotfiles
 
-These are my private void linux dotfiles to share across devices.
+My Dotfiles For DriftWM, Foot, Fuzzel, Broot, Dunst, And My Wallpapers!
