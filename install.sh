@@ -26,12 +26,41 @@ command -v xbps-install >/dev/null 2>&1 || {
     echo "This script needs XBPS (Void Linux)."
     exit 1
 }
-
-echo "==> Updating system"
-sudo xbps-install -Syu || {
-    echo "System update failed. Fix that before continuing."
+command -v sudo >/dev/null 2>&1 || {
+    echo "sudo is required. Install/configure sudo, then run this script again."
     exit 1
 }
+
+# Void repository setup -------------------------------------------------
+: > "$FAILED_FILE"
+# This machine is x86_64 musl. Void's official nonfree subrepository is
+# useful for packages in the supplied package snapshot. Multilib is NOT
+# enabled: Void only provides it for x86_64 glibc, not musl.
+echo "==> Updating the official Void main repository"
+sudo xbps-install -Syu || {
+    echo "System update failed. Check your Void mirror/network first."
+    exit 1
+}
+
+echo "==> Enabling the official Void nonfree repository"
+sudo xbps-install -y void-repo-nonfree || {
+    echo "Could not install void-repo-nonfree; continuing with main repository only."
+    echo "void-repo-nonfree" >> "$FAILED_FILE"
+}
+sudo xbps-install -S || {
+    echo "Repository synchronization failed. Fix repository configuration before continuing."
+    exit 1
+}
+
+# Explicit bootstrap/build/runtime requirements. These are installed before
+# the full snapshot list so the later download/build steps have their tools.
+echo "==> Installing bootstrap and driftwm build dependencies"
+BOOTSTRAP_PKGS="sudo ca-certificates curl git tar xz flatpak fontconfig gcc make pkg-config rust cargo libseat-devel libdisplay-info-devel libinput-devel eudev-libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libdrm-devel"
+for p in $BOOTSTRAP_PKGS; do
+    if ! sudo xbps-install -y "$p"; then
+        echo "$p" >> "$FAILED_FILE"
+    fi
+done
 
 # All 991 package names from the supplied xbps-query -l output.
 # Versions are deliberately omitted so XBPS installs repository versions.
@@ -206,7 +235,6 @@ PKGS='
 
 # Install in batches. If a batch fails, retry its packages individually so
 # one unavailable package does not prevent the rest from installing.
-: > "$FAILED_FILE"
 set -- $PKGS
 while [ "$#" -gt 0 ]; do
     BATCH=""
@@ -277,9 +305,28 @@ if command -v cargo >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
             echo "driftwm-clone" >> "$FAILED_FILE"
     fi
     if [ -d "$HOME/driftwm" ]; then
-        (cd "$HOME/driftwm" && cargo build --release) \
-            && sudo install -Dm755 "$HOME/driftwm/target/release/driftwm" /usr/local/bin/driftwm \
-            || echo "driftwm-build" >> "$FAILED_FILE"
+        # driftwm requires Rust 1.88+ (edition 2024).
+        RUST_VERSION="$(rustc --version 2>/dev/null | awk '{print $2}' | cut -d. -f1,2)"
+        RUST_MAJOR="$(printf '%s' "$RUST_VERSION" | cut -d. -f1)"
+        RUST_MINOR="$(printf '%s' "$RUST_VERSION" | cut -d. -f2)"
+        if [ -z "$RUST_MAJOR" ] || [ "$RUST_MAJOR" -lt 1 ] || { [ "$RUST_MAJOR" -eq 1 ] && [ "${RUST_MINOR:-0}" -lt 88 ]; }; then
+            echo "   System Rust is too old; installing the current stable Rust toolchain with rustup."
+            if curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable; then
+                # shellcheck disable=SC1090
+                [ ! -f "$HOME/.cargo/env" ] || . "$HOME/.cargo/env"
+                PATH="$HOME/.cargo/bin:$PATH"
+                export PATH
+            else
+                echo "rustup-install" >> "$FAILED_FILE"
+            fi
+        fi
+        if rustc --version >/dev/null 2>&1; then
+            (cd "$HOME/driftwm" && cargo build --locked --release) \
+                && sudo install -Dm755 "$HOME/driftwm/target/release/driftwm" /usr/local/bin/driftwm \
+                || echo "driftwm-build" >> "$FAILED_FILE"
+        else
+            echo "driftwm-rust-toolchain" >> "$FAILED_FILE"
+        fi
     fi
 else
     echo "   cargo or git missing; skipping driftwm build"
@@ -296,7 +343,7 @@ fi
 
 # ---------------------------------------------------------------
 echo "==> Copying optional config files"
-put() {{
+put() {
     if [ ! -f "$1" ]; then
         echo "   missing: $1 (skipped)"
         return
@@ -304,7 +351,7 @@ put() {{
     mkdir -p "$(dirname -- "$2")"
     [ ! -e "$2" ] || cp "$2" "$2.bak"
     cp "$1" "$2"
-}}
+}
 
 put "$DIR/config/driftwm/config.toml" "$HOME/.config/driftwm/config.toml"
 put "$DIR/config/foot/foot.ini"       "$HOME/.config/foot/foot.ini"
