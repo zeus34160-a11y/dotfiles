@@ -44,7 +44,7 @@ mod_key = "alt"
 # window_placement = "auto"
 
 # # Commands run at startup, each through sh -c.
-autostart = ["pipewire", "wireplumber"]
+autostart = ["pipewire", "wireplumber", "swaync", "wlsunset -t 3500 -T 6500 -S 07:00 -s 19:00 -d 1800", "pkill -x waybar &&  python3 ~/.config/waybar-dock/autohide.py"]
 
 [session]
 # # Your canvas, saved to ~/.local/state/driftwm/session.json. Suspended windows
@@ -128,8 +128,8 @@ XDG_CURRENT_DESKTOP = "driftwm"
 # map_to_output = "none"
 
 [cursor]
-# theme = "none"             # XCURSOR_THEME; "none" = inherit from environment (e.g. "Adwaita")
-# size = 0                    # XCURSOR_SIZE; 0 = inherit from environment (e.g. 24)
+theme = "none"             # XCURSOR_THEME; "none" = inherit from environment (e.g. "Adwaita")
+size = 0                    # XCURSOR_SIZE; 0 = inherit from environment (e.g. 24)
 # inactive_opacity = 0.5      # cursor opacity on non-active outputs (0.0–1.0)
 
 [navigation]
@@ -206,52 +206,45 @@ XDG_CURRENT_DESKTOP = "driftwm"
 default_mode = "minimal"
 # bg_color = "#ffffff"           # title bar background
 # fg_color = "#333333"           # title text + close button × color
-corner_radius = 17                # rounded corners off while the window covers
+corner_radius = 25                # rounded corners off while the window covers
                                  # the usable area
 shadow = true                  # drop shadow; off while the window covers the
                                  # usable area
 
-# # driftwm's own title bars (server decorations). The font comes from
-# # fontconfig; install `adwaita-fonts` for the default look.
-# title_bar_height = 25          # title bar height in px
-font = "Sarasa"          # title text font family
+font = "Iosevka"          # title text font family
 font_size = 11                 # title text size in points
 font_weight = "medium"         # thin/extralight/light/regular/medium/
                                  # semibold/bold/extrabold/black
-# title_align = "center"         # "left" or "center" (long titles left-align)
 
-# # Borders apply in every mode but "none".
-border_width = 3               # px; 0 = no border
-border_color = "#e8ccd7"       # unfocused border
-border_color_focused = "#EBAFC8"  # focused border; set it apart from
-                                    # border_color for a focus indicator
+border_width = 3
+border_color = "#49345f"
+border_color_focused = "#cba6f7"
 
-
-opacity_focused = 1.0
-opacity = 0.6
+opacity_focused = 0.6
+opacity = 1.0
 blur = true
 
 [effects]
 blur_radius = 5                # number of Kawase down+up passes
-blur_strength = 1.5            # per-pass texel spread
-animate_blur_fps = 20          # cap (0-144) on re-sampling a background that
+blur_strength = 3            # per-pass texel spread
+animate_blur_fps = 10          # cap (0-144) on re-sampling a background that
 
-animation_speed = 0.15          # window animation lerp factor (1 = instant)
-animation_scale = 0.80         # open/close grow/shrink amplitude (1 = fade only)
+animation_speed = 0.4
+animation_scale = 0.65
 
 [background]
-type = "tile"
-path = "~/Downloads/wall4.png"
-mirror_tile = true
-
+type = "wallpaper"
+path = "~/Wallpapers/purpur.png"
+animate_fps = 1
 
 [bindings]
 
 [keybindings]
+"mod+d" = "exec  rofi -x11 -show drun -normal-window -location 0 -theme ~/.config/rofi/theme.rasi"
 "mod+shift+r" = "reload-config"
+"mod+shift+q" = "exec wlogout"
 "mod+shift+e" = "quit"
 "mod+w" = "exec librewolf"  		   # Browser
-"mod+shift+q" = "suspend-window"
 "mod+f" = "toggle-fullscreen"
 "mod+m" = "fit-window-snapped"
 "mod+shift+m" = "fit-window"
@@ -496,10 +489,8 @@ mirror_tile = true
 # "3-finger-tap" = "center-window"
 
 [xwayland]
-# # X11 apps run through xwayland-satellite, started at launch with DISPLAY
-# # exported. Without the binary, X11 support is off (with a warning).
-# enabled = true                  # spawn xwayland-satellite at startup
-# path    = "xwayland-satellite"  # path to xwayland-satellite binary ($PATH lookup works)
+enabled = true
+path = "xwayland-satellite"
 
 [backend]
 # # Hardware workarounds, all off by default. Try them on flicker, crashes or
@@ -682,3 +673,10 @@ mirror_tile = true
 # # [[window_rules]]
 # # app_id  = "Alacritty"
 # # opacity = 0.9
+#
+#
+
+[[window_rules]]
+app_id = "Rofi"
+pinned_to_screen = true
+position = [0, 0]
